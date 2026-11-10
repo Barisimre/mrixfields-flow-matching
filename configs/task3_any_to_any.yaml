@@ -1,0 +1,108 @@
+task_name: task3_any_to_any
+network: network.yaml
+data:
+  multi_contrast: true
+  all_pairs: true
+  slice_axis: 2
+pretrain:
+  split: retro_train
+  batch_size: 8
+  num_workers: 16
+  lr: 2.0e-4
+  ema_decay: 0.999
+  epochs: 10
+  save_every: 1
+  flip_prob: 0.5        # sagittal-mirror augmentation (see the finetune block)
+  # x0 for the noise->target bridge. Instead of always starting from pure Gaussian
+  # noise (a generative prior), corrupt the target and bridge back (a restoration
+  # prior, closer to the real low->high-field task). Each op fires per sample with
+  # its own `prob`; ranges are sampled uniformly. Remove this block (or mode: noise)
+  # to keep the original pure-noise pretrain.
+  corruption:
+    mode: mix            # noise | degrade | mix
+    mask_to_brain: true   # corrupt only the brain; keep background 0 (like the data)
+    noise_only_prob: 0.1  # in `mix`, fraction of samples that use pure-noise x0
+    noise:                # additive Gaussian on the degraded image (std, [-1,1] scale)
+      prob: 0.5
+      sigma: [0.02, 0.3]
+    blur:                 # Gaussian blur (low SNR / PSF), sigma in pixels
+      prob: 0.5
+      sigma: [0.5, 2.5]
+    downsample:           # bilinear down+up = resolution loss, by this factor
+      prob: 0.4
+      factor: [1.5, 4.0]
+    gamma:                # nonlinear contrast curve (histogram shift), u**gamma in [0,1]
+      prob: 0.5
+      range: [0.4, 1.8]
+    gain_bias:            # linear window/level: (u-0.5)*gain + 0.5 + bias
+      prob: 0.5
+      gain: [0.85, 1.2]
+      bias: [-0.1, 0.1]
+    bias_field:           # smooth low-freq multiplicative inhomogeneity (MRI-like)
+      prob: 0.4
+      strength: [0.1, 0.4]
+finetune:
+  split: pro_train
+  batch_size: 8
+  num_workers: 16
+  lr: 3.0e-5
+  ema_decay: 0.999
+  epochs: 50
+  save_every: 1
+  channel_dropout: 0.0
+  # Sagittal-mirror augmentation: probability of flipping a sample left<->right (the
+  # head stays upright, the hemispheres swap). Source and target are flipped together.
+  # Volumes are MNI-registered so the mirror is anatomically valid; with only 3
+  # prospective training subjects this is nearly-free diversity. 0 = off.
+  flip_prob: 0.5
+  # Image-space source->target L2 on the endpoint estimate (x1_hat = x_t + (1-t)v),
+  # added on top of the velocity loss. weight 0 = off. The delay gates it by epoch:
+  # delay 5 => the term is inactive for epochs 1-5 and switches on at epoch 6.
+  endpoint_l2_weight: 1
+  endpoint_l2_delay_epochs: 5
+  # 1 - SSIM on the same endpoint estimate (a scored metric the velocity MSE is blind
+  # to); computed in [0,1], not the [-1,1] compute range.
+  # Same gating: weight 0 = off, delay 5 => active from epoch 6. The term is O(1e-1)
+  # while the velocity MSE is O(1e-2), so start small (0.05-0.2) or it dominates.
+  ssim_weight: 0.0
+  ssim_delay_epochs: 5
+  # Measure the endpoint SSIM even when ssim_weight is 0, so the baseline arm reports
+  # the quantity the other arm optimises (logged as finetune/loss_endpoint_ssim).
+  probe_endpoint_ssim: true
+  grad_clip: 0.0          # 0 = measure the gradient norm but don't clip
+
+finetune_refine_gan:
+  batch_size: 2          # rollout backprop holds K graphs + MSE forward + D
+  lr: 5.0e-5             # generator lr (a nudge)
+  d_lr: 3.0e-4           # discriminator lr (TTUR, above G)
+  epochs: 130
+  d_steps: 1             # critic updates per generator update
+  d_warmup_steps: 5000   # train D alone for N steps first (G frozen); 0 = off
+  rollout_steps: 3       # Euler steps for the leak-free adversarial generation
+  rollout_jitter_range: 100  # +/- random jitter (0-1000 timestep units) on each rollout step's t; 0 = off
+  adv_weight: 0.01
+  adv_ramp_steps: 2000   # linearly ramp adv_weight 0->target over N post-warmup G-steps; 0 = off
+  fm_weight: 10.0        # pix2pixHD feature-matching weight (L1 on D's intermediate features)
+  flip_prob: 0.5         # sagittal-mirror augmentation (see the finetune block)
+  # 1 - SSIM between the rollout generation and the real target — the same tensor D
+  # judges, so it anchors the structure the adversarial term is otherwise free to
+  # invent (the velocity MSE only anchors the teacher-forced field). Computed in
+  # [0,1], not the [-1,1] compute range. 0 = off; delay N =>
+  # active from epoch N+1. The term is O(1e-1) vs an MSE of O(1e-2), so keep it small.
+  ssim_weight: 1.0
+  ssim_delay_epochs: 0
+  # Log the rollout SSIM even when the weight is 0, so the baseline arm of the A/B
+  # reports the quantity the other arm optimises (refine_gan/rollout_ssim).
+  probe_rollout_ssim: true
+  save_every: 1
+# Throughput toggles; amp+tf32 are statistically neutral, the rest exact.
+# amp picks bf16 on Ampere+ (native tensor cores) and fp16+GradScaler on older
+# cards (Turing Quadro RTX 6000 has fp16 tensor cores but no bf16/TF32 — bf16
+# there falls off the tensor cores and is ~6x slower). tf32 is a no-op pre-Ampere.
+runtime:
+  amp: true
+  tf32: true
+  cudnn_benchmark: true
+  compile: false           # needs torch>=2.4 (env has 2.3.1)
+  persistent_workers: true
+  prefetch_factor: 4

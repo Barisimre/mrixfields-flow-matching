@@ -1,0 +1,12 @@
+# Python 3.10+. Install the PyTorch build that matches your CUDA version first
+# (https://pytorch.org/get-started/locally/), then: pip install -r requirements.txt
+torch
+torchvision        # only needed by lpips
+numpy<2.0
+nibabel
+h5py
+pyyaml
+tqdm
+scikit-image       # reference SSIM in src/eval/metrics.py
+lpips              # LPIPS metric in src/eval/metrics.py
+wandb              # optional: logging is on only when WANDB_PROJECT is set

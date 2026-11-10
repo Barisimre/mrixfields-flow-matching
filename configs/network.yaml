@@ -1,0 +1,18 @@
+# U-Net architecture for the unified any->any flow model.
+base: 32
+mults: [1, 2, 4, 4]
+num_res_blocks: 2   # resblocks per U-Net level
+out_ch: 3           # velocity for T1W, T2W, T2FLAIR
+concat_source: false  # false = x_t only (leak-free, in_ch=3); true = concat source (legacy, leaky)
+# in_ch is derived from out_ch + concat_source; set it explicitly only to assert a value.
+num_fields: 5       # src_field_emb + tgt_field_emb (0.1T,1.5T,3T,5T,7T)
+scale_shift: true  # false = additive cond; true = scale-shift-norm FiLM
+
+# Discriminator for the refine_gan stage (multi-scale conditional PatchGAN).
+# n_layers=3 -> 34px receptive-field patch (was 70px @ n_layers=4); num_scales=2
+# drops the ~280px near-global scale so D judges local texture (blur), not anatomy.
+discriminator:
+  base: 16
+  n_layers: 3
+  num_scales: 2
+  spectral_norm: true

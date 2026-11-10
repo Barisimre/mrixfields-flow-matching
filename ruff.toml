@@ -1,0 +1,15 @@
+line-length = 100
+target-version = "py310"
+# `src` is first-party; isort groups it separately when ruff runs from the repo
+# root.
+src = ["."]
+
+[lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+# E741 ambiguous names, E501 long lines in configs/docstrings are fine to flag.
+
+[format]
+# Ruff's formatter never column-aligns assignments, matching the project style
+# (one space around "=", no padding to line up "=" across lines).
+quote-style = "double"
+

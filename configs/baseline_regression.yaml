@@ -1,0 +1,75 @@
+# Paper baseline A — plain supervised regression, SAME U-Net as the flow model.
+# Trained by `src/baselines/train_baseline.py`; nothing in the flow pipeline reads
+# this file.
+task_name: baseline_regression_15h
+method: regression
+network: network.yaml          # identical architecture to the flow model
+data:
+  multi_contrast: true
+  all_pairs: true
+  slice_axis: 2
+
+regression:
+  loss: l1                     # l1 | l2
+  ssim_weight: 0.0             # 0 keeps the headline baseline a plain regression
+
+pretrain:
+  split: retro_train
+  batch_size: 8
+  num_workers: 16
+  lr: 2.0e-4
+  ema_decay: 0.999
+  max_hours: 15                # wall-clock budget for THIS stage; 0/absent = unlimited
+  epochs: 1000                 # hard cap, effectively unreachable under the budget
+  budget_check_every: 200      # steps between mid-epoch budget checks
+  save_every: 1
+  flip_prob: 0.5
+  grad_clip: 0.0               # 0 = measure the gradient norm but don't clip
+  # Degraded target -> clean target reconstruction; the same corruption menu the flow
+  # pretrain uses (src/models/degrade.py), copied verbatim so the two pretrainings see
+  # the same inputs. REQUIRED for regression: there is nothing to regress from without it.
+  corruption:
+    mode: mix                  # noise | degrade | mix
+    mask_to_brain: true
+    noise_only_prob: 0.1
+    noise:
+      prob: 0.5
+      sigma: [0.02, 0.3]
+    blur:
+      prob: 0.5
+      sigma: [0.5, 2.5]
+    downsample:
+      prob: 0.4
+      factor: [1.5, 4.0]
+    gamma:
+      prob: 0.5
+      range: [0.4, 1.8]
+    gain_bias:
+      prob: 0.5
+      gain: [0.85, 1.2]
+      bias: [-0.1, 0.1]
+    bias_field:
+      prob: 0.4
+      strength: [0.1, 0.4]
+
+finetune:
+  split: pro_train
+  batch_size: 8
+  num_workers: 16
+  lr: 3.0e-5
+  ema_decay: 0.999
+  max_hours: 15
+  epochs: 1000
+  budget_check_every: 200
+  save_every: 1
+  flip_prob: 0.5
+  channel_dropout: 0.0
+  grad_clip: 0.0
+
+runtime:
+  amp: true
+  tf32: true
+  cudnn_benchmark: true
+  compile: false
+  persistent_workers: true
+  prefetch_factor: 4

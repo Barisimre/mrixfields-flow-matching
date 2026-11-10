@@ -1,0 +1,9 @@
+# conda env create -f environment.yml && conda activate mrix
+name: mrix
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+    - -r requirements.txt

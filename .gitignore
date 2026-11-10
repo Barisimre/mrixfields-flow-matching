@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+*.h5
+*.pth
+*.nii.gz
+model_weights/
+outputs/
+wandb/
+.idea/
+.ruff_cache/
